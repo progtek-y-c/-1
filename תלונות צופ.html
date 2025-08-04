@@ -1,0 +1,595 @@
+import { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, setDoc } from 'firebase/firestore';
+
+// Define the global Firebase variables provided by the Canvas environment.
+declare const __firebase_config: string | undefined;
+declare const __app_id: string | undefined;
+declare const __initial_auth_token: string | undefined;
+
+// The list of all users, including managers
+const ALL_USERS = [
+  'אברהם טראב',
+  'אברהם קוס',
+  'איציק קנטור',
+  'איתמר אביזמר',
+  'איתמר קצבורג',
+  'אלחנן ברודמן',
+  'אלחנן הורביץ',
+  'אליה חדד',
+  'בני רוזנבלום',
+  'דוד ברג',
+  'דוד טוויל',
+  'חיים בן חמו',
+  'חיים נחום',
+  'יהודה כהן',
+  'יוני אמסלם',
+  'יוסף חיים חזן',
+  'יעקוב זאון',
+  'מאיר טטלבוים',
+  'מאיר כלף',
+  'מנחם פיטרמן',
+  'משה ממרוט',
+  'משה קופרמן',
+  'נהורי אברהם',
+  'נחמיה וייגרטן',
+  'נתנאל ברנפלד',
+  'שלמה ברנד',
+  'שלמה דוידוביץ',
+  'שלמה וייספייש',
+  'שלמה שמרלינג',
+  'אברהם קורטוביץ',
+  'יצחק בורשטיין',
+  'אחר',
+];
+
+// The list of available items for the gemach
+const AVAILABLE_ITEMS = [
+  'עטים',
+  'צלחות קטנות',
+  'צלחות גדולות',
+  'צלחות עמוקות',
+  'צלחות מרקיות',
+  'צלחות צלוחיות',
+  'כוסות קרות',
+  'כוסות חמות',
+  'מצית קליפר',
+  'ספריי לניקוי משקפיים',
+  'בשמים [להבדלה בלבד]',
+  'גפרורים',
+  'מפות',
+  'כפות הגשה',
+  'מברגי משקפיים',
+  'סכין יפנית',
+  'שקיות אשפה',
+  'גביעים [לקידוש וכו’]',
+  'סלוטייפ עבה',
+  'דקסמול',
+  'דבק 3 שניות',
+  'פנס',
+  'אל-בד',
+  'מגב',
+  'סכו״ם חד״פ',
+  'נרות',
+  'שקיות [גופיה\\מרשרשות]',
+  'מנקה כיפות',
+  'מנקה נעליים',
+  'משחת נעליים',
+  'סירים',
+  'מלקחיים',
+  'קרש חיתוך',
+  'כפות ר״פ',
+  'סכינים ר״פ',
+  'מתאם כרטיסים',
+  'יין לקידוש',
+  'כף אשפה',
+  'מטענים',
+  'כבלים',
+];
+
+// The list of managers for the complaint form.
+const MANAGER_NAMES = [
+  'חיים נחום',
+  'מאיר טייטלבוים',
+  'אחר',
+];
+
+// Lucide-React icons for a better UI.
+const XIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+);
+
+const UserIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+const ListIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="8" x2="21" y1="6" y2="6" />
+    <line x1="8" x2="21" y1="12" y2="12" />
+    <line x1="8" x2="21" y1="18" y2="18" />
+    <line x1="3" x2="3.01" y1="6" y2="6" />
+    <line x1="3" x2="3.01" y1="12" y2="12" />
+    <line x1="3" x2="3.01" y1="18" y2="18" />
+  </svg>
+);
+
+const FormInput = ({ label, id, ...props }) => (
+  <div className="relative mb-4">
+    <input
+      id={id}
+      className="peer block w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-2.5 pb-2.5 pt-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0"
+      placeholder=" "
+      dir="rtl"
+      {...props}
+    />
+    <label
+      htmlFor={id}
+      className="absolute right-1 top-2 z-10 origin-[0] -translate-y-4 scale-75 transform bg-white px-2 text-sm text-gray-500 duration-300 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600"
+    >
+      {label}
+    </label>
+  </div>
+);
+
+const UserLogin = ({ onLogin }) => {
+  const [name, setName] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (name) {
+      onLogin(name);
+    }
+  };
+
+  return (
+    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm text-center">
+      <h3 className="text-xl font-bold mb-4">בחר את שמך כדי להתחבר</h3>
+      <form onSubmit={handleSubmit}>
+        <div className="relative mb-4">
+          <label htmlFor="user-select" className="sr-only">
+            בחר שם
+          </label>
+          <select
+            id="user-select"
+            className="block w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-2.5 pb-2.5 pt-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            dir="rtl"
+          >
+            <option value="" disabled>בחר שם...</option>
+            {ALL_USERS.map((user) => (
+              <option key={user} value={user}>
+                {user}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200"
+        >
+          התחבר
+        </button>
+      </form>
+    </div>
+  );
+};
+
+const PasswordGate = ({ onCorrectPassword }) => {
+  const [password, setPassword] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const SECRET_KEY = "ישיבת באר התורה"; // The secret key to access the app.
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (password === SECRET_KEY) {
+      onCorrectPassword();
+    } else {
+      setErrorMessage('הקוד שהוזן שגוי. אנא נסה שוב.');
+    }
+  };
+
+  return (
+    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm text-center">
+      <h3 className="text-xl font-bold mb-4">הזן קוד כניסה</h3>
+      <form onSubmit={handleSubmit}>
+        <FormInput
+          id="secret-key"
+          type="password"
+          label="קוד כניסה"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        {errorMessage && <p className="text-sm text-red-500 mt-2">{errorMessage}</p>}
+        <button
+          type="submit"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200"
+        >
+          אישור
+        </button>
+      </form>
+    </div>
+  );
+};
+
+
+const RequestForm = ({ db, userId, isAuthReady, currentUserName }) => {
+  const [phone, setPhone] = useState('');
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [specialRequestMode, setSpecialRequestMode] = useState(false);
+  const [specialRequestText, setSpecialRequestText] = useState('');
+  const [aiAnalysisMessage, setAiAnalysisMessage] = useState('');
+
+  const handleItemToggle = (item) => {
+    setSelectedItems((prevItems) =>
+      prevItems.includes(item)
+        ? prevItems.filter((i) => i !== item)
+        : [...prevItems, item]
+    );
+  };
+
+  const analyzeSpecialRequest = async () => {
+    if (!specialRequestText) {
+      setAiAnalysisMessage('אנא כתוב את הבקשה המיוחדת לפני הניתוח.');
+      return;
+    }
+
+    setAiAnalysisMessage('מנתח בקשה מיוחדת...');
+
+    try {
+      let chatHistory = [];
+      const prompt = `היי ג׳מיני, אני מגיש בקשה לגמ"ח. יש רשימת פריטים קיימת: ${AVAILABLE_ITEMS.join(', ')}. אני רוצה לבקש פריט שאינו ברשימה. הבקשה שלי היא: "${specialRequestText}". נתח את הבקשה וסווג אותה לאחד מהפריטים הקיימים אם היא מתאימה. אם היא לא מתאימה לאף אחד מהם, ציין זאת וציין שהיא בקשה מיוחדת.`;
+      
+      chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+      const payload = { contents: chatHistory };
+      const apiKey = ""
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (text) {
+        setAiAnalysisMessage(`ניתוח ג׳מיני: ${text}`);
+      } else {
+        setAiAnalysisMessage('אירעה שגיאה בניתוח הבקשה. אנא נסה שוב.');
+      }
+    } catch (error) {
+      console.error('Error calling Gemini API:', error);
+      setAiAnalysisMessage('אירעה שגיאה בחיבור ל-Gemini. אנא נסה שוב.');
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setStatusMessage('');
+
+    if (!phone || (!specialRequestMode && selectedItems.length === 0)) {
+      setStatusMessage('אנא מלא את כל השדות ובחר לפחות פריט אחד.');
+      setIsSubmitting(false);
+      return;
+    }
+    
+    if (!db || !userId || !isAuthReady) {
+      setStatusMessage('אירעה שגיאה בחיבור לשירות. נסה לרענן את הדף.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+      const gemachRequestsRef = collection(db, `/artifacts/${appId}/public/data/gemachRequests`);
+
+      let requestData = {
+        name: currentUserName,
+        phone,
+        status: 'pending',
+        timestamp: new Date(),
+        userId: userId,
+      };
+
+      if (specialRequestMode) {
+        requestData = { ...requestData, specialRequestText };
+      } else {
+        requestData = { ...requestData, items: selectedItems };
+      }
+
+      await addDoc(gemachRequestsRef, requestData);
+      setStatusMessage('הבקשה נשלחה בהצלחה! תודה רבה.');
+      setPhone('');
+      setSelectedItems([]);
+      setSpecialRequestText('');
+      setSpecialRequestMode(false);
+      setAiAnalysisMessage('');
+    } catch (error) {
+      console.error('Error adding document: ', error);
+      if (error.code === 'permission-denied') {
+        setStatusMessage('שגיאת הרשאה: אין לך הרשאה לשלוח בקשה. אנא פנה למנהל האפליקציה.');
+      } else {
+        setStatusMessage('אירעה שגיאה בשליחת הבקשה. אנא נסה שוב.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-xl mx-auto text-right">
+      <h2 className="text-2xl font-bold mb-6 text-center text-indigo-700">טופס בקשה לגמ״ח צו״פ</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="text-lg font-bold text-gray-800 mb-4">
+          שלום, {currentUserName}!
+        </div>
+        <FormInput
+          id="phone"
+          type="tel"
+          label="מספר טלפון"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          required
+        />
+        
+        {specialRequestMode ? (
+          <div className="mb-4">
+            <div className="relative mb-2">
+              <textarea
+                id="specialRequestText"
+                className="peer block w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-2.5 pb-2.5 pt-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0 h-32"
+                placeholder=" "
+                value={specialRequestText}
+                onChange={(e) => setSpecialRequestText(e.target.value)}
+                required
+                dir="rtl"
+              ></textarea>
+              <label
+                htmlFor="specialRequestText"
+                className="absolute right-1 top-2 z-10 origin-[0] -translate-y-4 scale-75 transform bg-white px-2 text-sm text-gray-500 duration-300 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600"
+              >
+                הקלד את הבקשה המיוחדת שלך...
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={analyzeSpecialRequest}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200 mb-2"
+            >
+              ✨ נתח בקשה בעזרת Gemini
+            </button>
+            {aiAnalysisMessage && (
+              <div className="p-2 text-sm text-gray-700 bg-gray-100 rounded-lg text-right" dir="rtl">
+                {aiAnalysisMessage}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setSpecialRequestMode(false)}
+              className="w-full mt-2 text-indigo-600 hover:text-indigo-800 text-sm font-semibold transition duration-200"
+            >
+              חזור לבחירת פריטים מהרשימה
+            </button>
+          </div>
+        ) : (
+          <div className="mb-4 text-right">
+            <label className="block text-gray-700 font-bold mb-2">בחר פריטים לבקשה:</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {AVAILABLE_ITEMS.map((item) => (
+                <div key={item} className="flex items-center">
+                  <input
+                    id={item}
+                    type="checkbox"
+                    checked={selectedItems.includes(item)}
+                    onChange={() => handleItemToggle(item)}
+                    className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <label htmlFor={item} className="mr-2 text-sm text-gray-900">
+                    {item}
+                  </label>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSpecialRequestMode(true);
+                setSelectedItems([]);
+              }}
+              className="w-full mt-4 text-indigo-600 hover:text-indigo-800 text-sm font-semibold transition duration-200"
+            >
+              יש לי בקשה מיוחדת אחרת
+            </button>
+          </div>
+        )}
+        <button
+          type="submit"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200"
+          disabled={isSubmitting || !isAuthReady || (!specialRequestMode && selectedItems.length === 0)}
+        >
+          {isSubmitting ? 'שולח...' : 'שלח בקשה'}
+        </button>
+      </form>
+      {statusMessage && (
+        <div
+          className={`mt-4 p-4 rounded-lg text-center font-semibold ${
+            statusMessage.includes('בהצלחה') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}
+          dir="rtl"
+        >
+          {statusMessage}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ComplaintForm = ({ db, userId, isAuthReady, currentUserName }) => {
+  const [phone, setPhone] = useState('');
+  const [selectedManager, setSelectedManager] = useState('');
+  const [complaintDetails, setComplaintDetails] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setStatusMessage('');
+
+    if (!phone || !selectedManager || !complaintDetails) {
+      setStatusMessage('אנא מלא את כל השדות.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!db || !userId || !isAuthReady) {
+      setStatusMessage('אירעה שגיאה בחיבור לשירות. נסה לרענן את הדף.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+      const gemachComplaintsRef = collection(db, `/artifacts/${appId}/public/data/gemachComplaints`);
+      await addDoc(gemachComplaintsRef, {
+        name: currentUserName,
+        phone,
+        manager: selectedManager,
+        complaintDetails,
+        status: 'pending',
+        timestamp: new Date(),
+        userId: userId,
+      });
+      setStatusMessage('אנו מודים לך ומקווים לתקן את התקלה!');
+      setPhone('');
+      setSelectedManager('');
+      setComplaintDetails('');
+    } catch (error) {
+      console.error('Error adding complaint: ', error);
+      if (error.code === 'permission-denied') {
+        setStatusMessage('שגיאת הרשאה: אין לך הרשאה לשלוח תלונה. אנא פנה למנהל האפליקציה.');
+      } else {
+        setStatusMessage('אירעה שגיאה בשליחת התלונה. אנא נסה שוב.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-xl mx-auto text-right">
+      <h2 className="text-2xl font-bold mb-6 text-center text-red-700">הגשת תלונה למנהל</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="text-lg font-bold text-gray-800 mb-4">
+          שלום, {currentUserName}!
+        </div>
+        <FormInput
+          id="phone"
+          type="tel"
+          label="מספר טלפון"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          required
+        />
+        <div className="relative mb-4">
+          <label htmlFor="manager-select" className="sr-only">
+            בחר מנהל
+          </label>
+          <select
+            id="manager-select"
+            className="block w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-2.5 pb-2.5 pt-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0"
+            value={selectedManager}
+            onChange={(e) => setSelectedManager(e.target.value)}
+            required
+            dir="rtl"
+          >
+            <option value="" disabled>בחר מנהל...</option>
+            {MANAGER_NAMES.map((manager) => (
+              <option key={manager} value={manager}>
+                {manager}
+              </option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+            <svg
+              className="h-4 w-4 fill-current text-gray-500"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+            >
+              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+            </svg>
+          </div>
+        </div>
+        <div className="relative mb-4">
+          <textarea
+            id="complaintDetails"
+            className="peer block w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-2.5 pb-2.5 pt-4 text-sm text-gray-900 focus:border-blue-600 focus:outline-none focus:ring-0 h-32"
+            placeholder=" "
+            value={complaintDetails}
+            onChange={(e) => setComplaintDetails(e.target.value)}
+            required
+            dir="rtl"
+          ></textarea>
+          <label
+            htmlFor="complaintDetails"
+            className="absolute right-1 top-2 z-10 origin-[0] -translate-y-4 scale-75 transform bg-white px-2 text-sm text-gray-500 duration-300 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-blue-600"
+          >
+            פירוט התלונה
+          </label>
+        </div>
+        <button
+          type="submit"
+          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200"
+          disabled={isSubmitting || !isAuthReady}
+        >
+          {isSubmitting ? 'שולח...' : 'שלח תלונה'}
+        </button>
+      </
